@@ -92,7 +92,7 @@ jobs:
 
             #Frontend with API URL
             docker build \
-                --build-arg VITE_API_URL="http://gitgame-${RANDOM_SUFFIX}.eastus.azurecontainer.io:8080" \
+                --build-arg VITE_API_URL="http://gitgame-${RANDOM_SUFFIX}.eastus.azurecontainer.io:8000" \
                 -t $ACR_SERVER/gitgame-frontend:latest ./frontend
             docker push $ACR_SERVER/gitgame-frontend:latest
 
