@@ -1,0 +1,128 @@
+name: Deploy Git Game on Azure
+
+# When run the workflow
+on:
+  push:
+    branches: [ main ] # Each push on main branch
+  workflow_dispatch: # Allowed to run workflow manually
+
+# Global variables
+env:
+  REGISTRY_NAME: gitgame
+
+# Workflow jobs
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    # STEP1: Doing checkout code.    
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+    # STEP2: Azure login.
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+    
+    # STEP3: Terraform Install.
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: 1.5.0
+    
+    # STEP4: Start and prepare Terraform.
+      - name: Terraform Init
+        run: |
+            cd terraform
+            export ARM_CLIENT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}"
+            export ARM_CLIENT_SECRET="${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}"
+            export ARM_TENANT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}"
+            export ARM_SUBSCRIPTION_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}"
+            terraform init
+    
+    # STEP5: Infrastructure plan.
+      - name: Terraform Plan
+        run: |
+            cd terraform
+            export ARM_CLIENT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}"
+            export ARM_CLIENT_SECRET="${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}"
+            export ARM_TENANT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}"
+            export ARM_SUBSCRIPTION_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}"
+            
+            terraform plan -target=azurerm_resource_group.gitgame -target=azurerm_container_registry.gitgame -target=random_string.suffix
+    
+    # STEP6: Apply basic infraestructure
+      - name: Terraform Apply
+        run: |
+            cd terraform
+            export ARM_CLIENT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}"
+            export ARM_CLIENT_SECRET="${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}"
+            export ARM_TENANT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}"
+            export ARM_SUBSCRIPTION_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}"
+            
+            terraform apply -auto-approve -target=azurerm_resource_group.gitgame -target=azurerm_container_registry.gitgame -target=random_string.suffix      
+
+
+    # STEP7: Images Build.
+      - name: Build and Push Images
+        run: |
+            # Terrafor Configuration
+            export ARM_CLIENT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}"
+            export ARM_CLIENT_SECRET="${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}"
+            export ARM_TENANT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}"
+            export ARM_SUBSCRIPTION_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}"
+            
+            # Find registry info
+            ACR_SERVER=$(cd terraform && terraform output -raw acr_login_server)
+            ACR_USERNAME=$(cd terraform && terraform output -raw acr_admin_username)
+            ACR_PASSWORD=$(cd terraform && terraform output -raw acr_admin_password)
+            RANDOM_SUFFIX=$(cd terraform && terraform output -raw random_suffix)
+
+            # Login to ACR Container Registry
+            echo $ACR_PASSWORD | docker login $ACR_SERVER -u $ACR_USERNAME --password-stdin
+
+            # Build and Push Images Game
+            docker build -t $ACR_SERVER/gitgame-db:latest ./db
+            docker push $ACR_SERVER/gitgame-db:latest
+
+            docker build -t $ACR_SERVER/gitgame-backend:latest ./backend
+            docker push $ACR_SERVER/gitgame-backend:latest
+
+            #Frontend with API URL
+            docker build \
+                --build-arg VITE_API_URL="http://gitgame-${RANDOM_SUFFIX}.eastus.azurecontainer.io:8080" \
+                -t $ACR_SERVER/gitgame-frontend:latest ./frontend
+            docker push $ACR_SERVER/gitgame-frontend:latest
+
+    # STEP8: Containers Deploy on Azure Container Instances.
+      - name: Containers Deploy
+        run: |
+            cd terraform
+            export ARM_CLIENT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}"
+            export ARM_CLIENT_SECRET="${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}"
+            export ARM_TENANT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}"
+            export ARM_SUBSCRIPTION_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}"
+
+            # Force containers recriation to use in images update.
+              if terraform state show azurerm_container_group.gitgame >/dev/null 2>&1; then
+                terraform taint azurerm_container_group.gitgame
+              fi
+
+              terraform apply -auto-approve
+
+    # STEP9: Applications URLs 
+      - name: Show Application URLs
+        run: |
+            cd terraform
+            export ARM_CLIENT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}"
+            export ARM_CLIENT_SECRET="${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}"
+            export ARM_TENANT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}"
+            export ARM_SUBSCRIPTION_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).subscriptionId }}"
+                        
+            echo "🎮 Git Game URLs:
+            echo "🌐 Frontend: $(terraform output -raw application_url)"
+            echo "🔗 API: $(terraform output -raw api_url)"
+            echo ""
+            echo "🎉 Deploy finished! Waiting 2-3 minutes to be available."
