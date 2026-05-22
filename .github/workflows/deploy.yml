@@ -68,7 +68,7 @@ jobs:
     # STEP7: Images Build.
       - name: Build and Push Images
         run: |
-            # Terrafor Configuration
+            # Terraform Configuration
             export ARM_CLIENT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).clientId }}"
             export ARM_CLIENT_SECRET="${{ fromJson(secrets.AZURE_CREDENTIALS).clientSecret }}"
             export ARM_TENANT_ID="${{ fromJson(secrets.AZURE_CREDENTIALS).tenantId }}"
